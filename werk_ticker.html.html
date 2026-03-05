@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Von Barthealth – Consult</title>
+<style>
+  :root {
+    --ink:#1a1a2e; --green:#2d7a4f; --red:#c0392b;
+    --paper:#f8f6f1; --border:#d9d4c7; --muted:#8a8578;
+    --accent:#c8793a; --white:#fff;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--paper); font-family:Georgia,serif; color:var(--ink); min-height:100vh; display:flex; flex-direction:column; align-items:center; }
+  header { width:100%; background:var(--ink); color:#fff; padding:14px 24px; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { font-size:1.2rem; }
+  header span { font-size:.7rem; color:#aaa; letter-spacing:.1em; text-transform:uppercase; }
+  .wrap { max-width:400px; width:100%; padding:32px 16px; }
+  .maand-bar { background:var(--ink); color:#fff; border-radius:8px; padding:12px 18px; display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; }
+  .maand-bar .lbl { font-size:.62rem; text-transform:uppercase; letter-spacing:.08em; color:#999; }
+  .maand-bar .val { font-size:.9rem; font-weight:bold; margin-top:2px; }
+  .card { background:var(--white); border:1px solid var(--border); border-radius:10px; padding:28px 24px; margin-bottom:16px; text-align:center; }
+  .big-count { font-size:6rem; font-weight:bold; line-height:1; font-family:Georgia,serif; transition:color .3s; }
+  .count-label { font-size:.78rem; color:var(--muted); margin-top:6px; letter-spacing:.06em; text-transform:uppercase; }
+  .buttons { display:flex; gap:16px; justify-content:center; margin-top:24px; align-items:center; }
+  .btn-plus { width:80px; height:80px; border-radius:50%; background:var(--green); color:#fff; border:none; font-size:2.6rem; cursor:pointer; transition:transform .1s, background .15s; }
+  .btn-plus:hover { background:#226040; }
+  .btn-plus:active { transform:scale(.91); }
+  .btn-plus:disabled { background:#aaa; cursor:default; }
+  .btn-min { width:52px; height:52px; border-radius:50%; background:none; color:var(--red); border:2px solid var(--red); font-size:1.6rem; cursor:pointer; transition:all .15s; }
+  .btn-min:hover { background:var(--red); color:#fff; }
+  .btn-min:active { transform:scale(.91); }
+  .btn-min:disabled { opacity:.25; cursor:default; }
+  .status { font-size:.82rem; color:var(--muted); margin-top:14px; min-height:20px; }
+  .status.ok { color:var(--green); }
+  .status.fout { color:var(--red); }
+  .status.bezig { color:var(--accent); }
+  .log-list { list-style:none; max-height:260px; overflow-y:auto; }
+  .log-item { display:flex; justify-content:space-between; align-items:center; padding:7px 4px; border-bottom:1px solid #f0ede6; font-size:.82rem; }
+  .log-item:last-child { border-bottom:none; }
+  .log-item.del { opacity:.35; text-decoration:line-through; }
+  .log-time { color:var(--muted); font-size:.74rem; }
+  .badge { font-size:.63rem; padding:2px 7px; border-radius:10px; background:#f0ede6; color:var(--muted); margin-left:5px; }
+  .badge.del { background:#fde8e8; color:var(--red); }
+  .log-empty { color:var(--muted); font-size:.84rem; padding:10px 0; }
+  .card h2 { font-size:.9rem; font-weight:bold; text-align:left; border-bottom:2px solid var(--accent); padding-bottom:8px; margin-bottom:14px; }
+  .sync-note { font-size:.7rem; color:var(--muted); text-align:center; margin-top:8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Von Barthealth</h1>
+  <span>Werk – Consulten FLEX</span>
+</header>
+<div class="wrap">
+  <div class="maand-bar">
+    <div><div class="lbl">Maand</div><div class="val" id="maand-label">–</div></div>
+    <div><div class="lbl">Consulten FLEX</div><div class="val" id="maand-count">–</div></div>
+    <div><div class="lbl">Waarde</div><div class="val" id="maand-waarde">–</div></div>
+  </div>
+  <div class="card">
+    <div class="big-count" id="big-count">–</div>
+    <div class="count-label">consulten FLEX deze maand</div>
+    <div class="buttons">
+      <button class="btn-min" id="btn-min" onclick="verwijder()" disabled>−</button>
+      <button class="btn-plus" id="btn-plus" onclick="voegToe()">+</button>
+    </div>
+    <div class="status" id="status">Laden...</div>
+  </div>
+  <div class="card">
+    <h2>Log – deze maand</h2>
+    <ul class="log-list" id="log-ul"><li class="log-empty">Laden...</li></ul>
+  </div>
+  <p class="sync-note">Gesynchroniseerd via Google Sheets</p>
+</div>
+<script>
+const API = 'https://script.google.com/macros/s/AKfycbysGvF_iLxnWjM2y3YHEuhz1hEa5E_i81mwuP9NigZGBXOQSsf95svz7qYyVMIOgdg/exec';
+const MAANDEN = ['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+let logData = [];
+
+function huidigeMaandKey() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0');
+}
+function actief() {
+  return logData.filter(e => e.maand === huidigeMaandKey() && !e.verwijderd);
+}
+function setStatus(tekst, type='') {
+  const el = document.getElementById('status');
+  el.textContent = tekst;
+  el.className = 'status ' + type;
+}
+async function laadLog() {
+  try {
+    const res = await fetch(API + '?actie=lijst');
+    logData = await res.json();
+    render();
+  } catch(e) {
+    setStatus('Kan niet verbinden met Google Sheets', 'fout');
+  }
+}
+function render() {
+  const now = new Date();
+  const count = actief().length;
+  document.getElementById('maand-label').textContent = MAANDEN[now.getMonth()] + ' ' + now.getFullYear();
+  document.getElementById('maand-count').textContent = count;
+  document.getElementById('maand-waarde').textContent = '€ ' + (count*15.13).toFixed(2).replace('.',',');
+  document.getElementById('big-count').textContent = count;
+  document.getElementById('btn-min').disabled = count === 0;
+  const mk = huidigeMaandKey();
+  const entries = logData.filter(e => e.maand === mk).slice().reverse();
+  const ul = document.getElementById('log-ul');
+  if (entries.length === 0) {
+    ul.innerHTML = '<li class="log-empty">Geen registraties deze maand.</li>';
+  } else {
+    ul.innerHTML = '';
+    entries.forEach(e => {
+      const li = document.createElement('li');
+      li.className = 'log-item' + (e.verwijderd ? ' del' : '');
+      const badge = e.verwijderd ? '<span class="badge del">verwijderd</span>' : '<span class="badge">&#10003;</span>';
+      li.innerHTML = '<span>Consult FLEX ' + badge + '</span><span class="log-time">' + e.tijdstip + '</span>';
+      ul.appendChild(li);
+    });
+  }
+  const a = actief();
+  setStatus(a.length > 0 ? 'Laatste: ' + a[a.length-1].tijdstip : 'Nog geen consulten deze maand.');
+}
+async function voegToe() {
+  document.getElementById('btn-plus').disabled = true;
+  setStatus('Opslaan...', 'bezig');
+  try {
+    await fetch(API + '?actie=add');
+    await laadLog();
+    const el = document.getElementById('big-count');
+    el.style.color = '#2d7a4f';
+    setTimeout(() => el.style.color = '', 500);
+    setStatus('Consult opgeslagen!', 'ok');
+  } catch(e) {
+    setStatus('Fout bij opslaan: ' + e, 'fout');
+  }
+  document.getElementById('btn-plus').disabled = false;
+}
+async function verwijder() {
+  document.getElementById('btn-min').disabled = true;
+  setStatus('Verwijderen...', 'bezig');
+  try {
+    await fetch(API + '?actie=remove');
+    await laadLog();
+    setStatus('Laatste consult verwijderd', 'ok');
+  } catch(e) {
+    setStatus('Fout: ' + e, 'fout');
+  }
+}
+laadLog();
+</script>
+</body>
+</html>
